@@ -1,0 +1,166 @@
+STEP 1 : load data and normalize feature
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+
+# Load the dataset
+file_name = 'Iris.csv'
+df = pd.read_csv(file_name)
+
+# Drop the 'Id' column as it's not a feature
+df = df.drop('Id', axis=1)
+
+# Separate features (X) and target (y)
+X = df.drop('Species', axis=1)
+y = df['Species']
+
+# Encode the categorical target variable 'Species'
+le = LabelEncoder()
+y_encoded = le.fit_transform(y)
+
+# Split data into training and testing sets (80% train, 20% test)
+X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded)
+
+# Normalize/Scale the features
+# We fit the scaler on the training data and transform both train and test data
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+print("Data loaded and preprocessed successfully.")
+print(f"Training data shape: {X_train_scaled.shape}")
+print(f"Testing data shape: {X_test_scaled.shape}")
+print(f"Target classes: {list(le.classes_)}")
+print(f"Encoded classes: {list(range(len(le.classes_)))}")
+
+STEP 2 and 3 KNN Classification and experiment 
+import matplotlib.pyplot as plt
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score
+
+# Range of K values to test
+k_range = range(1, 21)
+test_accuracies = []
+
+# Loop through different values of K
+for k in k_range:
+    # Initialize the KNN classifier
+    knn = KNeighborsClassifier(n_neighbors=k)
+    
+    # Fit the model on the scaled training data
+    knn.fit(X_train_scaled, y_train)
+    
+    # Predict on the scaled test data
+    y_pred = knn.predict(X_test_scaled)
+    
+    # Calculate and store the accuracy
+    accuracy = accuracy_score(y_test, y_pred)
+    test_accuracies.append(accuracy)
+
+# Plot the results
+plt.figure(figsize=(10, 6))
+plt.plot(k_range, test_accuracies, marker='o', linestyle='dashed', color='blue', markersize=10)
+plt.title('Model Accuracy vs. K Value')
+plt.xlabel('K Value')
+plt.ylabel('Test Accuracy')
+plt.xticks(k_range)
+plt.grid(True)
+plt.savefig('knn_accuracy_plot.png')
+
+print("Accuracy for different K values plotted and saved as 'knn_accuracy_plot.png'.")
+
+STEP 4 :Evaluate the Model (Accuracy, Confusion Matrix)
+Based on the plot from the previous step, we can choose an optimal K. Often, this is a value in the "elbow" of the curve, or simply the value with the highest accuracy. Let's pick K=7 (which typically performs well on this dataset) to build our final model.
+We will evaluate this model using:
+Accuracy Score: The percentage of correct predictions.
+Classification Report: Shows precision, recall, and F1-score for each class.
+Confusion Matrix: A table showing what the model predicted vs. the actual labels.
+
+import seaborn as sns
+from sklearn.metrics import classification_report, confusion_matrix
+
+# Let's choose K=7 (a good balance from the typical plot)
+best_k = 7
+knn_final = KNeighborsClassifier(n_neighbors=best_k)
+
+# Train the final model
+knn_final.fit(X_train_scaled, y_train)
+
+# Make predictions
+y_pred_final = knn_final.predict(X_test_scaled)
+
+# Calculate Accuracy
+final_accuracy = accuracy_score(y_test, y_pred_final)
+print(f"--- Final Model Evaluation (K={best_k}) ---")
+print(f"Accuracy: {final_accuracy:.4f}")
+print("\n")
+
+# Get class names from the encoder
+class_names = le.classes_
+
+# Print Classification Report
+print("Classification Report:")
+print(classification_report(y_test, y_pred_final, target_names=class_names))
+print("\n")
+
+# Generate and plot Confusion Matrix
+cm = confusion_matrix(y_test, y_pred_final)
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+            xticklabels=class_names, yticklabels=class_names)
+plt.title(f'Confusion Matrix for KNN (K={best_k})')
+plt.ylabel('Actual Species')
+plt.xlabel('Predicted Species')
+plt.savefig('confusion_matrix.png')
+
+print("Confusion matrix saved as 'confusion_matrix.png'.")
+
+STEP 5 : Visualize decision and boundaries 
+import numpy as np
+from matplotlib.colors import ListedColormap
+
+# --- Prepare data for 2D visualization ---
+# We use the original (unscaled) Petal features for clear axis labels
+X_vis = df[['PetalLengthCm', 'PetalWidthCm']].values
+y_vis = y_encoded # We can use the same encoded target
+
+# Train a new KNN model just for this visualization
+knn_vis = KNeighborsClassifier(n_neighbors=best_k)
+knn_vis.fit(X_vis, y_vis)
+
+# --- Create a color map ---
+cmap_light = ListedColormap(['#FFAAAA', '#AAFFAA', '#AAAAFF']) # Light colors for regions
+cmap_bold = ListedColormap(['#FF0000', '#00FF00', '#0000FF'])  # Solid colors for points
+
+# --- Create the meshgrid ---
+# We'll create a grid of points spanning the range of our 2 features
+h = .02  # step size in the mesh
+x_min, x_max = X_vis[:, 0].min() - 0.5, X_vis[:, 0].max() + 0.5
+y_min, y_max = X_vis[:, 1].min() - 0.5, X_vis[:, 1].max() + 0.5
+xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
+                     np.arange(y_min, y_max, h))
+
+# --- Predict on the meshgrid ---
+# Use the 2D model to predict the class for every point in the grid
+Z = knn_vis.predict(np.c_[xx.ravel(), yy.ravel()])
+Z = Z.reshape(xx.shape)
+
+# --- Plot the decision boundaries and the data points ---
+plt.figure(figsize=(10, 8))
+# Plot the colored regions
+plt.contourf(xx, yy, Z, cmap=cmap_light)
+
+# Plot the actual data points
+sns.scatterplot(x=X_vis[:, 0], y=X_vis[:, 1], hue=df['Species'],
+                palette=['#FF0000', '#00FF00', '#0000FF'],
+                alpha=1.0, edgecolor="black")
+
+plt.xlim(xx.min(), xx.max())
+plt.ylim(yy.min(), yy.max())
+plt.title(f"KNN Decision Boundaries (K={best_k})")
+plt.xlabel('Petal Length (cm)')
+plt.ylabel('Petal Width (cm)')
+plt.legend(title='Species')
+plt.savefig('decision_boundaries.png')
+
+print("2D decision boundary plot saved as 'decision_boundaries.png'.")
